@@ -1,0 +1,74 @@
+name: GA4 Slack Report
+
+on:
+  schedule:
+    - cron: '30 3 * * *'   # 09:00 AM IST daily
+    - cron: '35 3 * * 1'   # 09:05 AM IST Monday
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Report mode (daily or weekly)'
+        required: true
+        default: 'daily'
+        type: choice
+        options:
+          - daily
+          - weekly
+      dry_run:
+        description: 'Dry run (print report without sending to Slack)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Configure GA4 credentials
+        env:
+          GA4_SESSION_JSON: ${{ secrets.GA4_SESSION_JSON }}
+          GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+        run: |
+          if [ -n "$GA4_SESSION_JSON" ]; then
+            mkdir -p ~/.config/ga4-mcp
+            printf '%s' "$GA4_SESSION_JSON" > ~/.config/ga4-mcp/session.json
+            chmod 600 ~/.config/ga4-mcp/session.json
+          fi
+          if [ -n "$GCP_SA_KEY_JSON" ]; then
+            printf '%s' "$GCP_SA_KEY_JSON" > /tmp/gcp-key.json
+            chmod 600 /tmp/gcp-key.json
+            echo "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json" >> "$GITHUB_ENV"
+          fi
+
+      - name: Run GA4 Slack Report
+        env:
+          GA4_PROPERTY_ID: ${{ secrets.GA4_PROPERTY_ID || '539310486' }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID || 'C0CDFCJ6G93' }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          elif [ "${{ github.event.schedule }}" = "35 3 * * 1" ]; then
+            MODE="weekly"
+          else
+            MODE="daily"
+          fi
+
+          DRY_FLAG=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+
+          python ga4_slack_report.py --mode "$MODE" $DRY_FLAG

@@ -1,0 +1,3 @@
+google-analytics-mcp>=2.11.7
+slack_sdk>=3.46.0
+python-dotenv>=1.2.4
